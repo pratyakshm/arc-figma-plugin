@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root {
+    --bg: #2a2a2a;
+    --panel: #2a2a2a;
+    --line: #4a4a4a;
+    --text: #ffffff;
+    --muted: #b9b9b9;
+    --blue: #4a8df6;
+    --green: #8cf0a6;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+  body { display: flex; flex-direction: column; }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .logo {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #ff8ad8, #d61f9e 70%);
+    flex: none;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.15);
+  }
+  header h1 { font-size: 18px; font-weight: 600; margin: 0; flex: 1; }
+  .close {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 22px; line-height: 1; padding: 4px 8px; border-radius: 6px;
+  }
+  .close:hover { background: #ffffff14; color: #fff; }
+
+  main { flex: 1; display: flex; gap: 0; min-height: 0; padding: 20px; }
+
+  .stage {
+    flex: none;
+    width: 600px;
+    background: var(--green);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .stage canvas { width: 100%; height: 100%; display: block; }
+
+  .controls {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 0 28px;
+    position: relative;
+  }
+  .group { margin-bottom: 56px; }
+  .group:first-child { margin-top: 8px; }
+  .group h2 {
+    text-align: center;
+    font-size: 16px; font-weight: 600;
+    margin: 0 0 26px;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 2px; background: #e9e9e9; border-radius: 2px;
+    margin: 0 0 28px; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #fff; border: none; cursor: pointer;
+  }
+  input[type="range"]:focus { outline: none; }
+  input[type="range"]:focus::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px var(--blue);
+  }
+
+  .field { display: flex; align-items: center; gap: 14px; }
+  .field input[type="number"] {
+    flex: 1;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 15px;
+    padding: 12px 14px;
+    -moz-appearance: textfield;
+  }
+  .field input[type="number"]:focus {
+    outline: none; border-color: var(--blue);
+  }
+  .field input::-webkit-outer-spin-button,
+  .field input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .field .pct { color: var(--muted); font-size: 16px; width: 12px; }
+
+  .actions {
+    margin-top: auto;
+    display: flex;
+    justify-content: flex-end;
+    gap: 14px;
+  }
+  button.btn {
+    font-size: 15px; font-weight: 500;
+    padding: 12px 26px; border-radius: 8px; cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .reset { background: transparent; border-color: var(--line); color: #fff; }
+  .reset:hover { background: #ffffff10; }
+  .apply { background: var(--blue); color: #fff; }
+  .apply:hover { background: #3f7ee0; }
+  .apply:disabled { opacity: .45; cursor: not-allowed; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="logo"></div>
+    <h1>ARC - Bend your type!</h1>
+    <button class="close" id="close" title="Close">&times;</button>
+  </header>
+
+  <main>
+    <div class="stage"><canvas id="canvas"></canvas></div>
+
+    <div class="controls">
+      <div class="group">
+        <h2>Bend Strength &#128170;</h2>
+        <input type="range" id="bendRange" min="0" max="100" step="1" value="0" />
+        <div class="field">
+          <input type="number" id="bendNum" min="0" max="100" value="0" />
+          <span class="pct">%</span>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>Preview zoom &#128269;</h2>
+        <input type="range" id="zoomRange" min="20" max="300" step="1" value="130" />
+        <div class="field">
+          <input type="number" id="zoomNum" min="20" max="300" value="130" />
+          <span class="pct">%</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn reset" id="reset">Reset</button>
+        <button class="btn apply" id="apply">Apply</button>
+      </div>
+    </div>
+  </main>
+
+<script>
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+
+  const bendRange = document.getElementById("bendRange");
+  const bendNum = document.getElementById("bendNum");
+  const zoomRange = document.getElementById("zoomRange");
+  const zoomNum = document.getElementById("zoomNum");
+  const applyBtn = document.getElementById("apply");
+
+  // Selection mirrored from the main thread.
+  let sel = null; // { text, fontFamily, fontSize, color }
+
+  const DEFAULT_BEND = 0;
+  const DEFAULT_ZOOM = 130;
+
+  function clampInput(el) {
+    let v = parseFloat(el.value);
+    const min = parseFloat(el.min), max = parseFloat(el.max);
+    if (isNaN(v)) v = min;
+    v = Math.max(min, Math.min(max, v));
+    return v;
+  }
+
+  // --- geometry: identical math to code.js ---------------------------------
+  // Returns per-glyph { ch, w, x, y, a } in font-pixel units, centred on 0,0.
+  function layout(bendFrac) {
+    const items = [];
+    if (!sel || !sel.text.length) return items;
+
+    ctx.font = `${sel.fontSize}px ${sel.fontFamily}, sans-serif`;
+    const chars = Array.from(sel.text);
+    const widths = chars.map((c) => ctx.measureText(c).width || sel.fontSize * 0.3);
+    const total = widths.reduce((s, w) => s + w, 0) || 1;
+
+    if (bendFrac < 0.0001) {
+      let cum = 0;
+      chars.forEach((ch, i) => {
+        items.push({ ch, w: widths[i], x: cum + widths[i] / 2 - total / 2, y: 0, a: 0 });
+        cum += widths[i];
+      });
+      return items;
+    }
+
+    const phi = bendFrac * 2 * Math.PI;
+    const radius = total / phi;
+    let cum = 0;
+    chars.forEach((ch, i) => {
+      const s = cum + widths[i] / 2;
+      cum += widths[i];
+      const a = (s / total - 0.5) * phi;
+      items.push({ ch, w: widths[i], x: radius * Math.sin(a), y: -radius * Math.cos(a), a });
+    });
+    return items;
+  }
+
+  function resizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const r = canvas.getBoundingClientRect();
+    canvas.width = Math.round(r.width * dpr);
+    canvas.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function draw() {
+    resizeCanvas();
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.width / dpr;
+    const H = canvas.height / dpr;
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (!sel || !sel.text.trim()) {
+      ctx.fillStyle = "rgba(0,0,0,.45)";
+      ctx.font = "16px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Select a text layer in Figma", W / 2, H / 2);
+      return;
+    }
+
+    const bendFrac = clampInput(bendNum) / 100;
+    const zoom = clampInput(zoomNum) / 100;
+    const items = layout(bendFrac);
+    if (!items.length) return;
+
+    // Bounding box of glyph centres, padded so rotated glyphs stay on-stage.
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const it of items) {
+      minX = Math.min(minX, it.x); maxX = Math.max(maxX, it.x);
+      minY = Math.min(minY, it.y); maxY = Math.max(maxY, it.y);
+    }
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    ctx.fillStyle = sel.color || "#000";
+    ctx.font = `${sel.fontSize * zoom}px ${sel.fontFamily}, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    for (const it of items) {
+      ctx.save();
+      ctx.translate(W / 2 + (it.x - cx) * zoom, H / 2 + (it.y - cy) * zoom);
+      ctx.rotate(it.a);
+      ctx.fillText(it.ch, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  // --- live canvas preview (real font, on the actual Figma canvas) ---------
+  let previewTimer = null;
+  function sendPreview() {
+    parent.postMessage({ pluginMessage: { type: "preview", bend: clampInput(bendNum) } }, "*");
+  }
+  function schedulePreview() {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(sendPreview, 90); // debounce so we don't rebuild every tick
+  }
+
+  // --- control sync --------------------------------------------------------
+  function syncBend(v) { bendRange.value = v; bendNum.value = v; draw(); schedulePreview(); }
+  function syncZoom(v) { zoomRange.value = v; zoomNum.value = v; draw(); }
+
+  bendRange.addEventListener("input", () => syncBend(bendRange.value));
+  bendNum.addEventListener("input", () => { bendRange.value = clampInput(bendNum); draw(); schedulePreview(); });
+  bendNum.addEventListener("change", () => syncBend(clampInput(bendNum)));
+
+  zoomRange.addEventListener("input", () => syncZoom(zoomRange.value));
+  zoomNum.addEventListener("input", () => { zoomRange.value = clampInput(zoomNum); draw(); });
+  zoomNum.addEventListener("change", () => syncZoom(clampInput(zoomNum)));
+
+  document.getElementById("reset").addEventListener("click", () => {
+    syncBend(DEFAULT_BEND);
+    syncZoom(DEFAULT_ZOOM);
+  });
+
+  applyBtn.addEventListener("click", () => {
+    parent.postMessage({ pluginMessage: { type: "apply", bend: clampInput(bendNum) } }, "*");
+  });
+
+  document.getElementById("close").addEventListener("click", () => {
+    parent.postMessage({ pluginMessage: { type: "close" } }, "*");
+  });
+
+  window.addEventListener("resize", draw);
+
+  window.onmessage = (e) => {
+    const msg = e.data.pluginMessage;
+    if (!msg) return;
+    if (msg.type === "selection") {
+      sel = msg.payload;
+      applyBtn.disabled = !sel;
+      draw();
+      if (sel && clampInput(bendNum) >= 1) schedulePreview(); // re-arc the new selection
+    }
+  };
+
+  // Ask for the current selection on open.
+  parent.postMessage({ pluginMessage: { type: "request-selection" } }, "*");
+  draw();
+</script>
+</body>
+</html>
